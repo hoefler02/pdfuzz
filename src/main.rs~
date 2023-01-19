@@ -1,0 +1,41 @@
+use clap::Parser;
+use rand::Rng;
+
+/*
+A PDF is made up of 4 main elements:
+1. The Version Header
+2. The Body (Objects)
+3. XREF Table
+4. Trailer (Locations)
+*/
+
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)]
+struct Args {
+    /// Output PDF File
+    #[arg(short, long)]
+    output: String
+}
+
+fn main() {
+    let args = Args::parse();
+    println!("header: {}", generate_header());
+}
+
+/*
+    PART 1: Header
+    Generates a random PDF header
+    %PDF-1.1 through %PDF-1.7 (valid)
+*/
+fn generate_header() -> String {
+    let ver: u8 = rand::thread_rng().gen_range(0..8);
+    format!("%PDF-1.{}", ver)
+}
+
+/*
+    PART 2: Body
+    We start by generating random PDF objects
+    These objects compose the body
+/*
+
+fn generate_
