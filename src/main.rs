@@ -1,16 +1,9 @@
-use rand::distributions::Alphanumeric;
-use rand::seq::SliceRandom;
+use std::collections::HashMap;
 use clap::Parser;
 use rand::Rng;
+use std::fmt;
+use hex;
 
-
-/*
-A PDF is made up of 4 main elements:
-1. The Version Header
-2. The Body (Objects)
-3. XREF Table
-4. Trailer (Locations)
-*/
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -20,170 +13,110 @@ struct Args {
     output: String
 }
 
+
+#[derive(Debug)]
+enum PDFObject {
+    Boolean(bool),
+    Number(Numeric),
+    Str(String),
+    Name(String),
+    Arr(Vec<PDFObject>),
+    Dict(HashMap<String, PDFObject>),
+    //Stream(PDFStream),
+    //Null(PDFNull)
+}
+
+#[derive(Debug)]
+enum Numeric {
+    UnsignedInteger(u32),
+    SignedInteger(i32),
+    Floating(f32)
+}
+
+impl Into<Numeric> for f32 {
+    fn into(self) -> Numeric {
+        Numeric::Floating(self)
+    }
+}
+
+impl Into<Numeric> for u32 {
+    fn into(self) -> Numeric {
+        Numeric::UnsignedInteger(self)
+    }
+}
+
+impl Into<Numeric> for i32 {
+    fn into(self) -> Numeric {
+        Numeric::SignedInteger(self)
+    }
+}
+
+impl fmt::Display for Numeric {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Numeric::UnsignedInteger(i) => write!(f, "{}", i),
+            Numeric::SignedInteger(i) => write!(f, "{}", i),
+            Numeric::Floating(i) => write!(f, "{}", i)
+        }
+    }
+}
+
+impl PDFObject {
+    fn boolean(b: bool) -> Self {
+        PDFObject::Boolean(b)
+    }
+    fn number<T: Into<Numeric>>(n: T) -> Self {
+        PDFObject::Number(n.into())
+    }
+    fn plain_string(s: &str) -> Self {
+        PDFObject::Str(format!("({})", s))
+    }
+    fn hex_string(s: &str) -> Self {
+        PDFObject::Str(format!("<{}>", hex::encode(s)))
+    }
+    fn name(s: &str) -> Self {
+        PDFObject::Name(format!("/{}", s))
+    }
+    fn name_key(k: &str) -> String {
+        format!("/{}", k)
+    }
+    fn array(a: Vec<PDFObject>) -> Self {
+        PDFObject::Arr(a)
+    }
+    fn dict(d: HashMap<String, PDFObject>) -> Self {
+        PDFObject::Dict(d)
+    }
+}
+
+impl fmt::Display for PDFObject {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            PDFObject::Boolean(b) => write!(f, "{}", b),
+            PDFObject::Str(s) => write!(f, "{}", s),
+            PDFObject::Number(n) => write!(f, "{}", n),
+            PDFObject::Arr(a) => {
+                write!(f, "[");
+                for (idx, item) in a.iter().enumerate() {
+                    if idx != 0 {
+                        write!(f, " ");
+                    }
+                    write!(f, "{}", item);
+                }
+                write!(f, "]")
+            },
+            PDFObject::Name(n) => write!(f, "{}", n),
+            PDFObject::Dict(d) => {
+                write!(f, "<< ");
+                for (key, val) in d.into_iter() {
+                    write!(f, "{} {}\n", key, val);
+                }
+                write!(f, ">>\n")
+            }
+        }
+    }
+}
+
+
 fn main() {
-    let args = Args::parse();
-    println!("header: {}", gen_header(None::<f32>));
-    println!("{}", gen_float());
-    println!("{}", gen_string(1000));
-    println!("{}", gen_hex_string(1000));
-    println!("{}", gen_dict(10));
-    println!("{}", gen_array(10));
-    println!("{}", gen_bytes(10));
+    let args = args::Parse();
 }
-
-fn rand_range(low: u32, high: u32) -> u32 {
-    rand::thread_rng().gen_range(low..high)
-}
-
-/*
-    PART 1: Header
-    Gens a random PDF header
-    %PDF-1.1 through %PDF-1.7 (valid) or wildcard
-*/
-fn gen_header(wildcard: Option<f32>) -> String {
-    if wildcard.is_none() {
-        let ver: u8 = rand_range(0, 8) as u8;
-        format!("%PDF-1.{}", ver)
-    } else {
-	    format!("%PDF-{}", wildcard.unwrap())
-    }
-}
-
-/*
-    PART 2: Body
-    We start by generating random PDF objects
-    These 8 types of objects compose the body
-        1. Boolean
-        2. Number
-        3. String
-        4. Name
-        5. Array
-        6. Dictionary
-        7. Stream
-        8. Null
-*/
-
-// fn gen_body() -> String {
-//     random range and generate objects
-// }
-
-fn gen_bool() -> String {
-    rand::thread_rng().gen::<bool>().to_string()
-}
-
-fn gen_int(signed: bool) -> String {
-    if signed {
-        rand::thread_rng().gen::<i8>().to_string()
-    } else {
-        rand::thread_rng().gen::<u8>().to_string()
-    }
-}
-
-fn gen_float() -> String {
-    (rand::thread_rng().gen::<f32>() * 100.).to_string()
-}
-
-fn gen_num() -> String {
-    let opt = rand_range(0, 3);
-    if opt == 0 {
-        gen_int(false)
-    } else if opt == 1 {
-        gen_int(true)
-    } else {
-        gen_float()
-    }
-}
-
-fn gen_string(max: u32) -> String {
-    if rand::random() {
-        gen_raw_string(max)
-    } else {
-        gen_hex_string(max)
-    }
-}
-
-fn rnd_str(alpha: &str, max: u32) -> String {
-    let alpha: Vec<char> = alpha.chars().collect();
-    let len = rand_range(0, max);
-    let mut res = String::new();
-    for _ in 0..len {
-        res.push(*alpha.choose(&mut rand::thread_rng()).unwrap());
-    }
-    res
-}
-
-fn gen_raw_string(max: u32) -> String {
-    let s = rnd_str("0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ", max);
-    format!("({})", s)
-}
-
-fn gen_hex_string(max: u32) -> String {
-    let s = rnd_str("01234456789ABCDEF", max);
-    format!("<{}>", s)
-}
-
-fn gen_name(max: u32) -> String {
-    let s = rnd_str("0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ", max);
-    format!("/{}", s)
-}
-
-/*
-TODO: gen_array
-this requires all data types
-*/
-
-fn gen_array(max: u32) -> String {
-    let len = rand_range(0, max);
-    let mut s = String::from("[ ");
-    for _ in 0..len {
-        let c = rand::thread_rng().gen_range(0..5);
-        if c == 0 {
-            s.push_str(&gen_bool());
-        } else if c == 1 {
-            s.push_str(&gen_num());
-        } else if c == 2 {
-            s.push_str(&gen_string(100));
-        } else if c == 3{
-            s.push_str(&gen_name(30));
-        } else {
-            s.push_str(&gen_dict(3));
-        }
-        s.push(' ');
-    }
-    s.push_str(" ]"); s
-
-}
-
-
-fn gen_dict(max: u32) -> String {
-    let len = rand_range(0, max);
-    let mut s = String::from("<< ");
-    for _ in 0..len {
-        s.push_str(&gen_name(30));
-        s.push(' ');
-        let c = rand::thread_rng().gen_range(0..5);
-        if c == 0 {
-            s.push_str(&gen_bool());
-        } else if c == 1 {
-            s.push_str(&gen_num());
-        } else if c == 2 {
-            s.push_str(&gen_string(100));
-        } else if c == 3{
-            s.push_str(&gen_name(30));
-        } else {
-            s.push_str(&gen_dict(3));
-        }
-        s.push('\n');
-    }
-    s.push_str(">>"); s
-}
-
-fn gen_bytes(max: u32) -> String {
-    let len = rand_range(0, max);
-    let mut buf = String::new();
-    for _ in 0..len {
-        buf.push(char::from_u32(rand_range(0, 257)).unwrap())
-    }
-    buf
-}
-
